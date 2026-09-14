@@ -1,0 +1,37 @@
+# Render Blueprint — PostGrab
+# Single web service: Python backend serves the built React frontend.
+# Cron job pings /api/ping every 14 minutes to prevent free-tier sleep.
+
+services:
+  - type: web
+    name: postgrab
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: TEMP_DIR
+        value: /tmp/postgrab
+      - key: JOB_TTL_SECONDS
+        value: "1800"
+      - key: RATE_LIMIT_REQUESTS
+        value: "30"
+      - key: RATE_LIMIT_WINDOW_SECONDS
+        value: "60"
+      - key: MAX_DOWNLOAD_SIZE_MB
+        value: "500"
+      - key: CORS_ORIGINS
+        value: "https://*.onrender.com,http://localhost:5173"
+      - key: DEBUG
+        value: "false"
+
+  - type: cron
+    name: postgrab-keepalive
+    runtime: image
+    image:
+      url: docker.io/curlimages/curl:latest
+    schedule: "*/14 * * * *"
+    buildCommand: ""
+    startCommand: "curl -sf https://postgrab.onrender.com/api/ping || true"

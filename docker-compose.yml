@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      - PORT=8000
+      - TEMP_DIR=/tmp/postgrab
+      - JOB_TTL_SECONDS=1800
+      - RATE_LIMIT_REQUESTS=20
+      - RATE_LIMIT_WINDOW_SECONDS=60
+      - MAX_DOWNLOAD_SIZE_MB=500
+      - CORS_ORIGINS=http://localhost:3000,http://frontend:80
+    volumes:
+      - postgrab_tmp:/tmp/postgrab
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgrab_tmp:

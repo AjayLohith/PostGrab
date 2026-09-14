@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <rect width="32" height="32" rx="8" fill="#09090b"/>
+  <rect x="0.75" y="0.75" width="30.5" height="30.5" rx="7.25" fill="none" stroke="#27272a" stroke-width="1.5"/>
+  <!-- Post frame brackets -->
+  <path d="M7.5 12V8.5A1.5 1.5 0 0 1 9 7h3.5" fill="none" stroke="#71717a" stroke-width="2" stroke-linecap="round"/>
+  <path d="M24.5 12V8.5A1.5 1.5 0 0 0 23 7h-3.5" fill="none" stroke="#71717a" stroke-width="2" stroke-linecap="round"/>
+  <!-- Central download arrow -->
+  <path d="M16 10v9.5m0 0l-3.5-3.5m3.5 3.5l3.5-3.5" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Bottom capture cradle -->
+  <path d="M8 23.5h16" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+</svg>

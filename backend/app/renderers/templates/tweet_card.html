@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+/* ── Local and system fonts ── */
+{{ font_face_css }}
+
+/* ── Reset ── */
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    background: transparent;
+    margin: 0;
+    padding: 0;
+}
+
+/* ── Twitter/Tweetpik Font Stacks ── */
+:root {
+    --tweet-body-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif,
+                       "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", "Apple Color Emoji", sans-serif;
+    --tweet-display-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif,
+                          "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", "Apple Color Emoji", sans-serif;
+    --tweet-mono-font: 'Consolas', 'Cascadia Code', 'JetBrains Mono', 'Fira Code',
+                       'Courier New', monospace;
+}
+
+/* ── Wrapper Canvas ── */
+.wrapper {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+
+    {% if canvas_height and canvas_height > 0 %}
+    width: {{ canvas_width }}px;
+    height: {{ canvas_height }}px;
+    {% else %}
+    width: {{ canvas_width }}px;
+    padding: {{ outer_padding }}px;
+    {% endif %}
+
+    {% if background == 'solid' %}
+    background: {{ background_color or '#ffffff' }};
+    {% elif background == 'gradient' %}
+    background: linear-gradient(145deg, {{ gradient_colors }});
+    {% elif background == 'mesh' %}
+    background:
+        radial-gradient(at 40% 20%, {{ mesh_color_1 }} 0px, transparent 50%),
+        radial-gradient(at 80% 0%,  {{ mesh_color_2 }} 0px, transparent 50%),
+        radial-gradient(at 0%  50%, {{ mesh_color_3 }} 0px, transparent 50%),
+        radial-gradient(at 80% 50%, {{ mesh_color_4 }} 0px, transparent 50%),
+        radial-gradient(at 0%  100%,{{ mesh_color_5 }} 0px, transparent 50%);
+    background-color: {{ mesh_base }};
+    {% elif background == 'custom_image' %}
+    background: url('{{ background_image_data }}') center/cover no-repeat;
+    {% else %}
+    background: {{ background_color or '#ffffff' }};
+    {% endif %}
+}
+
+/* ── Tweet Card Container ── */
+.card {
+    width: 100%;
+    {% if canvas_width and canvas_width >= 900 %}
+    max-width: 920px;
+    border-radius: {{ radius * 1.25 | int }}px;
+    {% else %}
+    max-width: 580px;
+    border-radius: {{ radius }}px;
+    {% endif %}
+    overflow: hidden;
+    font-family: var(--tweet-body-font);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    border: none;
+
+    {% if shadow == 'none' %}
+    box-shadow: none;
+    {% elif shadow == 'soft' %}
+    box-shadow: 0 4px 24px rgba(0,0,0,0.10), 0 1px 6px rgba(0,0,0,0.06);
+    {% elif shadow == 'medium' %}
+    box-shadow: 0 8px 48px rgba(0,0,0,0.18), 0 2px 12px rgba(0,0,0,0.10);
+    {% elif shadow == 'strong' %}
+    box-shadow: 0 16px 72px rgba(0,0,0,0.32), 0 4px 20px rgba(0,0,0,0.18);
+    {% else %}
+    box-shadow: none;
+    {% endif %}
+
+    {% if theme == 'light' %}
+    background: #ffffff;
+    color: #0f1419;
+    border: none;
+    {% elif theme == 'dark' %}
+    background: #000000;
+    color: #f7f9f9;
+    border: none;
+    {% else %}
+    background: #ffffff;
+    color: #0f1419;
+    border: none;
+    {% endif %}
+}
+
+.card-inner {
+    {% if canvas_width and canvas_width >= 900 %}
+    padding: 38px 40px;
+    {% else %}
+    padding: 26px 28px;
+    {% endif %}
+}
+
+/* ── Header ── */
+.tweet-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.avatar-wrap {
+    flex-shrink: 0;
+    {% if canvas_width and canvas_width >= 900 %}
+    width: 56px;
+    height: 56px;
+    {% else %}
+    width: 48px;
+    height: 48px;
+    {% endif %}
+    position: relative;
+}
+
+.avatar {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+}
+
+.avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    {% if canvas_width and canvas_width >= 900 %}
+    font-size: 24px;
+    {% else %}
+    font-size: 20px;
+    {% endif %}
+    font-family: var(--tweet-display-font);
+    background: #e2e5e8;
+    color: #536471;
+}
+
+.author-info {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Display name — preserved exactly with stylized Unicode */
+.display-name {
+    font-weight: 700;
+    {% if canvas_width and canvas_width >= 900 %}
+    font-size: 22px;
+    line-height: 1.25;
+    {% else %}
+    font-size: 18px;
+    line-height: 1.25;
+    {% endif %}
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: var(--tweet-display-font);
+    {% if theme == 'dark' %}
+    color: #e7e9ea;
+    {% else %}
+    color: #000000;
+    {% endif %}
+}
+
+.name-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.handle-line {
+    font-family: var(--tweet-body-font);
+    {% if canvas_width and canvas_width >= 900 %}
+    font-size: 17px;
+    line-height: 1.25;
+    margin-top: 3px;
+    {% else %}
+    font-size: 15px;
+    line-height: 1.25;
+    margin-top: 2px;
+    {% endif %}
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    {% if theme == 'dark' %}
+    color: #71767b;
+    {% else %}
+    color: #536471;
+    {% endif %}
+}
+
+/* ── Tweet Body Text ── */
+.tweet-content {
+    font-family: var(--tweet-body-font);
+    {% if canvas_width and canvas_width >= 900 %}
+    font-size: 24px;
+    line-height: 1.44;
+    letter-spacing: -0.015em;
+    margin-top: 14px;
+    margin-bottom: 20px;
+    {% else %}
+    font-size: 20px;
+    line-height: 1.42;
+    letter-spacing: -0.012em;
+    margin-top: 12px;
+    margin-bottom: 16px;
+    {% endif %}
+    font-weight: 500;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    {% if theme == 'dark' %}
+    color: #e7e9ea;
+    {% else %}
+    color: #000000;
+    {% endif %}
+}
+
+.tweet-content a {
+    color: #1d9bf0;
+    text-decoration: none;
+}
+
+/* ── Media Elements ── */
+.tweet-media-wrap {
+    margin-bottom: 0;
+    border-radius: {{ media_radius }}px;
+    overflow: hidden;
+    border: none;
+}
+
+/* Single Image */
+.single-media {
+    width: 100%;
+    display: block;
+    object-fit: contain;
+}
+
+/* Multi-image CSS Grids (1, 2, 3, 4 images) */
+.media-grid {
+    display: grid;
+    gap: 3px;
+    width: 100%;
+    background: rgba(0, 0, 0, 0.04);
+}
+
+/* 2 images: 2 equal columns */
+.media-grid.grid-2 {
+    grid-template-columns: 1fr 1fr;
+    height: 260px;
+}
+.media-grid.grid-2 img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* 3 images: 1 large left, 2 stacked right */
+.media-grid.grid-3 {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    height: 280px;
+}
+.media-grid.grid-3 img:first-child {
+    grid-row: 1 / span 2;
+    height: 100%;
+}
+.media-grid.grid-3 img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* 4 images: 2x2 grid */
+.media-grid.grid-4 {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    height: 280px;
+}
+.media-grid.grid-4 img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* ── Video Thumbnail / Poster Frame ── */
+.video-thumb {
+    position: relative;
+    width: 100%;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.video-thumb img {
+    width: 100%;
+    display: block;
+    object-fit: contain;
+}
+
+.play-btn {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    {% if canvas_width and canvas_width >= 900 %}
+    width: 76px;
+    height: 76px;
+    border: 4px solid #ffffff;
+    {% else %}
+    width: 64px;
+    height: 64px;
+    border: 3.5px solid #ffffff;
+    {% endif %}
+    border-radius: 50%;
+    background: #1d9bf0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.28);
+}
+
+.play-btn svg {
+    fill: #ffffff;
+    {% if canvas_width and canvas_width >= 900 %}
+    width: 32px;
+    height: 32px;
+    margin-left: 4px;
+    {% else %}
+    width: 26px;
+    height: 26px;
+    margin-left: 3px;
+    {% endif %}
+}
+
+.tweet-entity {
+    color: #1d9bf0;
+}
+
+/* ── Quoted Tweet Card ── */
+.quoted-card {
+    margin-top: 16px;
+    border: 1px solid {% if theme == 'dark' %}#2f3336{% else %}#cfd9de{% endif %};
+    border-radius: 16px;
+    overflow: hidden;
+    background: transparent;
+}
+
+.quoted-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px 8px;
+}
+
+.quoted-avatar-wrap {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.quoted-avatar {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.quoted-avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    background: #e2e5e8;
+    color: #536471;
+    font-size: 15px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.quoted-display-name {
+    font-weight: 700;
+    font-size: 20px;
+    line-height: 1.25;
+    color: inherit;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.quoted-handle {
+    font-size: 17px;
+    line-height: 1.25;
+    color: #536471;
+}
+
+.quoted-content {
+    padding: 4px 18px 16px;
+    font-size: 21px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: inherit;
+}
+
+.quoted-media-wrap {
+    width: 100%;
+    border-top: 1px solid {% if theme == 'dark' %}#2f3336{% else %}#eff3f4{% endif %};
+    overflow: hidden;
+    background: #000;
+    border-bottom-left-radius: 15px;
+    border-bottom-right-radius: 15px;
+}
+
+.quoted-media-wrap .single-media {
+    width: 100%;
+    display: block;
+    object-fit: contain;
+}
+
+.quoted-media-wrap .video-thumb {
+    width: 100%;
+    position: relative;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.quoted-media-wrap .video-thumb img {
+    width: 100%;
+    display: block;
+    object-fit: contain;
+}
+
+.play-btn-sm {
+    width: 64px !important;
+    height: 64px !important;
+    border: 3.5px solid #ffffff !important;
+}
+
+.play-btn-sm svg {
+    width: 26px !important;
+    height: 26px !important;
+    margin-left: 3px !important;
+}
+</style>
+</head>
+<body>
+<div class="wrapper" id="capture">
+  <article class="card">
+    <div class="card-inner">
+
+      {% if theme == 'terminal' %}
+      <div class="terminal-prompt">postgrab fetch "{{ url }}"</div>
+      {% endif %}
+
+      <!-- Header -->
+      <header class="tweet-header">
+        <div class="avatar-wrap">
+          {% if avatar_url %}
+          <img class="avatar"
+               src="{{ avatar_url }}"
+               alt="{{ author_name }}" />
+          {% else %}
+          <div class="avatar-placeholder">{{ avatar_initial }}</div>
+          {% endif %}
+        </div>
+
+        <div class="author-info">
+          <div class="name-row">
+            <span class="display-name">{{ author_name }}</span>
+          </div>
+          <div class="handle-line">@{{ author_handle }}</div>
+        </div>
+      </header>
+
+      <!-- Tweet body -->
+      {% if text %}
+      <div class="tweet-content">{{ text | safe }}</div>
+      {% endif %}
+
+      <!-- Single image -->
+      {% if media_images | length == 1 %}
+      <div class="tweet-media-wrap">
+        <img class="single-media" src="{{ media_images[0] if media_images[0] is string else media_images[0].url }}" alt="Media" loading="eager" />
+      </div>
+
+      <!-- Multiple images (2-4) -->
+      {% elif media_images | length > 1 %}
+      <div class="tweet-media-wrap">
+        <div class="media-grid grid-{{ [media_images | length, 4] | min }}">
+          {% for img in media_images[:4] %}
+          <img src="{{ img if img is string else img.url }}" alt="Image {{ loop.index }}" loading="eager" />
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Video / GIF thumbnail -->
+      {% if has_video and video_thumbnail %}
+      <div class="tweet-media-wrap">
+        <div class="video-thumb">
+          <img src="{{ video_thumbnail }}" alt="Video thumbnail" loading="eager" />
+          <div class="play-btn">
+            <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      <!-- Quoted Tweet -->
+      {% if quoted %}
+      <div class="quoted-card">
+        <div class="quoted-header">
+          <div class="quoted-avatar-wrap">
+            {% if quoted.avatar_url %}
+            <img class="quoted-avatar" src="{{ quoted.avatar_url }}" alt="{{ quoted.author_name }}" />
+            {% else %}
+            <div class="quoted-avatar-placeholder">{{ quoted.avatar_initial }}</div>
+            {% endif %}
+          </div>
+          <span class="quoted-display-name">{{ quoted.author_name }}</span>
+          <span class="quoted-handle">@{{ quoted.author_handle }}</span>
+        </div>
+
+        {% if quoted.text %}
+        <div class="quoted-content">{{ quoted.text | safe }}</div>
+        {% endif %}
+
+        {% if quoted.has_video and quoted.video_thumbnail %}
+        <div class="quoted-media-wrap">
+          <div class="video-thumb">
+            <img src="{{ quoted.video_thumbnail }}" alt="Quoted video thumbnail" loading="eager" />
+            <div class="play-btn play-btn-sm">
+              <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+            </div>
+          </div>
+        </div>
+        {% elif quoted.images and quoted.images | length > 0 %}
+        <div class="quoted-media-wrap">
+          <img class="single-media" src="{{ quoted.images[0] if quoted.images[0] is string else quoted.images[0].url }}" alt="Quoted Media" loading="eager" />
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+    </div><!-- .card-inner -->
+  </article><!-- .card -->
+</div><!-- .wrapper -->
+</body>
+</html>
