@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react'
-import { api } from '@/lib/api'
-import { triggerDownload, sleep } from '@/lib/utils'
-import type { PostData } from '@/lib/types'
+import { api } from '../lib/api'
+import { triggerDownload, sleep } from '../lib/utils'
+import type { PostData, MediaItem } from '../lib/types'
 
 interface UseDirectDownloadOptions {
   jobId: string
@@ -23,14 +23,14 @@ export function useDirectDownload({
   const [statusText, setStatusText] = useState<string | null>(null)
   const [completed, setCompleted] = useState(false)
 
-  const rootVideos = post.media.filter((m) => m.type === 'video')
-  const rootGifs = post.media.filter((m) => m.type === 'gif')
-  const rootImages = post.media.filter((m) => m.type === 'image')
+  const rootVideos = post.media.filter((m: MediaItem) => m.type === 'video')
+  const rootGifs = post.media.filter((m: MediaItem) => m.type === 'gif')
+  const rootImages = post.media.filter((m: MediaItem) => m.type === 'image')
 
   const qMedia = post.quoted_post?.media || []
-  const quotedVideos = qMedia.filter((m) => m.type === 'video')
-  const quotedGifs = qMedia.filter((m) => m.type === 'gif')
-  const quotedImages = qMedia.filter((m) => m.type === 'image')
+  const quotedVideos = qMedia.filter((m: MediaItem) => m.type === 'video')
+  const quotedGifs = qMedia.filter((m: MediaItem) => m.type === 'gif')
+  const quotedImages = qMedia.filter((m: MediaItem) => m.type === 'image')
 
   const allMedia = [
     ...rootVideos,

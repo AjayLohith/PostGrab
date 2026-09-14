@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { api } from '@/lib/api'
-import type { RenderOptions, RenderResponse } from '@/lib/types'
+import { api } from '../lib/api'
+import type { RenderOptions, RenderResponse } from '../lib/types'
 
 /**
  * Manages tweet card rendering with debounce.
