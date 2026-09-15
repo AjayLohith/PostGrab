@@ -6,6 +6,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     fonts-liberation \
     fonts-dejavu-core \
     fonts-noto-color-emoji \
+    fonts-noto-core \
+    fonts-telu \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

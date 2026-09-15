@@ -100,12 +100,25 @@ def _to_data_uri(path_or_bytes: Path | bytes, mime_type: str = "image/png") -> s
 
 
 # ── Font strategy ────────────────────────────────────────────────────────────
+FONTS_DIR = Path(__file__).parent / "fonts"
+
+
+def _load_telugu_font_b64() -> str:
+    font_file = FONTS_DIR / "NotoSansTelugu.woff2"
+    if font_file.exists():
+        return base64.b64encode(font_file.read_bytes()).decode("ascii")
+    return ""
+
+
+_TELUGU_FONT_B64 = _load_telugu_font_b64()
+
+
 def _build_font_face_css() -> str:
     """
-    Generate @font-face rules using local() src references.
-    Allows Chromium to resolve native OS fonts (Segoe UI, Roboto, DejaVu, Noto).
+    Generate @font-face rules using local() src references and bundled Unicode fonts.
+    Allows Chromium to resolve native OS fonts and guaranteed high-quality Telugu typography.
     """
-    return """
+    rules = ["""
 @font-face {
     font-family: 'PostGrabUI';
     src: local('Segoe UI'), local('segoeui'), local('Roboto'), local('Helvetica Neue'), local('Arial');
@@ -125,7 +138,18 @@ def _build_font_face_css() -> str:
     font-weight: 400;
     font-style: normal;
 }
-"""
+"""]
+    if _TELUGU_FONT_B64:
+        rules.append(f"""
+@font-face {{
+    font-family: 'Noto Sans Telugu';
+    src: url('data:font/woff2;base64,{_TELUGU_FONT_B64}') format('woff2');
+    font-weight: 400 700;
+    font-style: normal;
+    unicode-range: U+0951-0952, U+0964-0965, U+0C00-0C7F, U+1CDA, U+1CF2, U+200C-200D, U+25CC;
+}}
+""")
+    return "\n".join(rules)
 
 
 _FONT_FACE_CSS = _build_font_face_css()
