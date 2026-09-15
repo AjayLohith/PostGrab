@@ -59,12 +59,10 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
-# CORS
+# CORS - allow all origins for public downloader API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origin_list,
-    allow_origin_regex=r"^https?://.*",
-    allow_credentials=True,
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -23,7 +23,7 @@ services:
       - key: MAX_DOWNLOAD_SIZE_MB
         value: "500"
       - key: CORS_ORIGINS
-        value: "https://*.onrender.com,http://localhost:5173"
+        value: "*"
       - key: DEBUG
         value: "false"
 

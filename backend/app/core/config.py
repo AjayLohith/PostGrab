@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     max_download_size_mb: int = 500
 
     # CORS
-    cors_origins: str = "http://localhost:5173,http://localhost:3000,https://*.onrender.com"
+    cors_origins: str = "*"
 
     model_config = {
         "env_file": ".env",
