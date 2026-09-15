@@ -38,7 +38,7 @@ export function ResultPage({ result, onBack, onError }: ResultPageProps) {
   })
 
   return (
-    <div className="w-full max-w-2xl mx-auto space-y-6 sm:space-y-8 animate-slide-up pb-12 sm:pb-16">
+    <div className="w-full max-w-5xl mx-auto space-y-6 sm:space-y-8 animate-slide-up pb-12 sm:pb-16">
       {/* Top Header Bar: Back on left, Quick Download Both/All on right */}
       <div className="flex items-center justify-between gap-3 pt-1">
         <Button

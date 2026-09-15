@@ -143,7 +143,7 @@ export default function App() {
 
         {/* ── Main ──────────────────────────────────────────────────── */}
         <main className="flex-1 flex flex-col px-4 sm:px-6 py-8 sm:py-16">
-          <div className="max-w-2xl mx-auto w-full flex-1 flex flex-col">
+          <div className={['mx-auto w-full flex-1 flex flex-col transition-all duration-300', page === 'result' ? 'max-w-5xl' : 'max-w-2xl'].join(' ')}>
             {page === 'home' ? (
               <div className="flex flex-col items-center gap-8 sm:gap-10 flex-1">
                 {/* Hero */}
