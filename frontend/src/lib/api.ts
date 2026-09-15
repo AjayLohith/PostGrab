@@ -4,9 +4,8 @@ import type {
   RenderResponse,
 } from './types'
 
-const API_BASE = import.meta.env.VITE_API_URL
-  ? `${import.meta.env.VITE_API_URL}/api`
-  : '/api'
+const rawApiUrl = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '')
+const API_BASE = rawApiUrl ? `${rawApiUrl}/api` : '/api'
 
 class ApiError extends Error {
   constructor(
