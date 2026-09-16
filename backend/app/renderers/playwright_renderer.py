@@ -100,25 +100,40 @@ def _to_data_uri(path_or_bytes: Path | bytes, mime_type: str = "image/png") -> s
 
 
 # ── Font strategy ────────────────────────────────────────────────────────────
+# Google Fonts CDN link for comprehensive multi-script Unicode support.
+# Playwright's Chromium fetches these during page.set_content().
+# Covers: Telugu, Devanagari, Tamil, Kannada, Bengali, Malayalam, Arabic, JP, KR, SC.
+GOOGLE_FONTS_LINK = (
+    '<link rel="preconnect" href="https://fonts.googleapis.com">'
+    '<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>'
+    '<link href="https://fonts.googleapis.com/css2?'
+    'family=Noto+Sans:wght@400;500;700'
+    '&family=Noto+Sans+Telugu:wght@400;700'
+    '&family=Noto+Sans+Devanagari:wght@400;700'
+    '&family=Noto+Sans+Tamil:wght@400;700'
+    '&family=Noto+Sans+Kannada:wght@400;700'
+    '&family=Noto+Sans+Bengali:wght@400;700'
+    '&family=Noto+Sans+Malayalam:wght@400;700'
+    '&family=Noto+Sans+Arabic:wght@400;700'
+    '&family=Noto+Sans+JP:wght@400;700'
+    '&family=Noto+Sans+KR:wght@400;700'
+    '&family=Noto+Sans+SC:wght@400;700'
+    '&family=Noto+Color+Emoji'
+    '&display=swap" rel="stylesheet">'
+)
+
 FONTS_DIR = Path(__file__).parent / "fonts"
-
-
-def _load_telugu_font_b64() -> str:
-    font_file = FONTS_DIR / "NotoSansTelugu.woff2"
-    if font_file.exists():
-        return base64.b64encode(font_file.read_bytes()).decode("ascii")
-    return ""
-
-
-_TELUGU_FONT_B64 = _load_telugu_font_b64()
 
 
 def _build_font_face_css() -> str:
     """
-    Generate @font-face rules using local() src references and bundled Unicode fonts.
-    Allows Chromium to resolve native OS fonts and guaranteed high-quality Telugu typography.
+    Generate @font-face rules for system font fallback.
+
+    The primary multi-script fonts are loaded via Google Fonts CDN <link> tag
+    (injected into template context as `google_fonts_link`). These local()
+    rules provide fallback for air-gapped/offline environments.
     """
-    rules = ["""
+    css = """
 @font-face {
     font-family: 'PostGrabUI';
     src: local('Segoe UI'), local('segoeui'), local('Roboto'), local('Helvetica Neue'), local('Arial');
@@ -138,18 +153,34 @@ def _build_font_face_css() -> str:
     font-weight: 400;
     font-style: normal;
 }
-"""]
-    if _TELUGU_FONT_B64:
-        rules.append(f"""
+"""
+    # If we have a locally bundled Telugu woff2, add it as an additional fallback
+    telugu_woff2 = FONTS_DIR / "NotoSansTelugu.woff2"
+    if telugu_woff2.exists():
+        b64 = base64.b64encode(telugu_woff2.read_bytes()).decode("ascii")
+        css += f"""
 @font-face {{
     font-family: 'Noto Sans Telugu';
-    src: url('data:font/woff2;base64,{_TELUGU_FONT_B64}') format('woff2');
+    src: url('data:font/woff2;base64,{b64}') format('woff2');
     font-weight: 400 700;
     font-style: normal;
     unicode-range: U+0951-0952, U+0964-0965, U+0C00-0C7F, U+1CDA, U+1CF2, U+200C-200D, U+25CC;
 }}
-""")
-    return "\n".join(rules)
+"""
+    # Locally bundled Twitter Chirp font for Twitter PUA icons (e.g. U+EA00 Twitter bird)
+    chirp_woff2 = FONTS_DIR / "Chirp-Regular.woff2"
+    if chirp_woff2.exists():
+        chirp_b64 = base64.b64encode(chirp_woff2.read_bytes()).decode("ascii")
+        css += f"""
+@font-face {{
+    font-family: 'TwitterChirp';
+    src: url('data:font/woff2;base64,{chirp_b64}') format('woff2');
+    font-weight: 400 700;
+    font-style: normal;
+    unicode-range: U+E000-F8FF, U+F0000-FFFFD;
+}}
+"""
+    return css
 
 
 _FONT_FACE_CSS = _build_font_face_css()
@@ -365,6 +396,7 @@ def _build_context(
         "view_count":       post.view_count,
         # Fonts
         "font_face_css":    _FONT_FACE_CSS,
+        "google_fonts_link": GOOGLE_FONTS_LINK,
     }
 
 
@@ -394,10 +426,16 @@ def render_to_png(
     )
 
     try:
-        page.set_content(html, wait_until="load")
+        page.set_content(html, wait_until="networkidle")
 
-        # Section 19 & 24: Wait for all fonts to be ready
+        # Wait for all fonts (including Google Fonts CDN) to be fully loaded.
+        # networkidle above ensures the CSS has been fetched; fonts.ready
+        # ensures all @font-face rules have resolved and glyphs are available.
         page.evaluate("() => document.fonts.ready")
+
+        # Extra safety: give Chromium a moment to complete text shaping
+        # after fonts load (prevents rare race conditions with complex scripts)
+        page.wait_for_timeout(100)
 
         # Section 24 & 25: Wait for all images to load and verify natural dimensions
         page.evaluate("""() => {

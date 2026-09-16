@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{{ google_fonts_link | safe }}
 <style>
 /* ── Local and system fonts ── */
-{{ font_face_css }}
+{{ font_face_css | safe }}
 
 /* ── Reset ── */
 *, *::before, *::after {
@@ -20,14 +21,24 @@ html, body {
     padding: 0;
 }
 
-/* ── Twitter/Tweetpik Font Stacks ── */
+/* ── Font Stacks with comprehensive multi-script Unicode coverage ── */
 :root {
-    --tweet-body-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif,
-                       "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", "Apple Color Emoji", sans-serif;
-    --tweet-display-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-                          "Noto Sans Telugu", "Nirmala UI", "Gautami",
-                          "Apple SD Gothic Neo", "Noto Sans",
-                          "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", "Apple Color Emoji", sans-serif;
+    --tweet-body-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+                       "TwitterChirp",
+                       "Noto Sans", "Noto Sans Telugu", "Noto Sans Devanagari", "Noto Sans Tamil",
+                       "Noto Sans Kannada", "Noto Sans Bengali", "Noto Sans Malayalam", "Noto Sans Arabic",
+                       "Noto Sans JP", "Noto Sans KR", "Noto Sans SC",
+                       "Nirmala UI", "Gautami",
+                       "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", "Apple Color Emoji",
+                       sans-serif;
+    --tweet-display-font: "TwitterChirp",
+                          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+                          "Noto Sans", "Noto Sans Telugu", "Noto Sans Devanagari", "Noto Sans Tamil",
+                          "Noto Sans Kannada", "Noto Sans Bengali", "Noto Sans Malayalam", "Noto Sans Arabic",
+                          "Noto Sans JP", "Noto Sans KR", "Noto Sans SC",
+                          "Nirmala UI", "Gautami", "Apple SD Gothic Neo",
+                          "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji", "Apple Color Emoji",
+                          sans-serif;
     --tweet-mono-font: 'Consolas', 'Cascadia Code', 'JetBrains Mono', 'Fira Code',
                        'Courier New', monospace;
 }
