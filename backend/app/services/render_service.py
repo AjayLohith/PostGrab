@@ -285,13 +285,18 @@ async def render_tweet_card(job: Job, request: RenderRequest) -> str:
         post_id = sanitize_filename(post.id or "post")
         filename = f"{handle}_{post_id}_tweet.png"
 
-        # Save to job temp dir
+        # Save to job temp dir via atomic rename
         assert job.temp_dir is not None
         file_path = job.temp_dir / filename
-        file_path.write_bytes(png_bytes)
+        temp_file = job.temp_dir / f"{filename}.tmp"
+        temp_file.write_bytes(png_bytes)
 
-        if not file_path.exists() or file_path.stat().st_size == 0:
+        if not temp_file.exists() or temp_file.stat().st_size == 0 or temp_file.stat().st_size != len(png_bytes):
+            if temp_file.exists():
+                temp_file.unlink()
             raise ImageRenderFailed("Failed to write rendered tweet card PNG.")
+
+        temp_file.replace(file_path)
 
         # Register asset and cache key
         job.add_asset(TWEET_ASSET_ID, filename, "image/png", file_path)

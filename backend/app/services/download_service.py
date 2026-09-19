@@ -57,7 +57,9 @@ async def extract_thumbnail_ffmpeg(video_input: str | Path, output_path: Path) -
     Tries at 00:00:01 first, then 00:00:00 for ultra-short clips.
     """
     try:
-        # Check if ffmpeg executable exists
+        if output_path.exists() and output_path.stat().st_size > 0:
+            return True
+
         ffmpeg_bin = shutil.which("ffmpeg")
         if not ffmpeg_bin:
             logger.warning("ffmpeg executable not found in PATH")
@@ -89,22 +91,40 @@ async def extract_thumbnail_ffmpeg(video_input: str | Path, output_path: Path) -
 
 
 async def download_video_stream(url: str, output_path: Path) -> bool:
-    """Download or merge video streams using yt-dlp."""
+    """Download or merge video streams using yt-dlp with stream copy and fragment concurrency."""
     try:
         import yt_dlp
         loop = asyncio.get_event_loop()
 
+        temp_output = output_path.with_name(f"{output_path.name}.tmp")
+
         def _do_ytdlp():
             opts = {
-                "outtmpl": str(output_path),
-                "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
+                "outtmpl": str(temp_output),
+                "format": "best[ext=mp4]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best",
                 "merge_output_format": "mp4",
+                "postprocessor_args": {
+                    "merger": ["-c", "copy"],
+                },
+                "concurrent_fragment_downloads": 8,
+                "retries": 3,
+                "fragment_retries": 3,
+                "socket_timeout": 15,
                 "quiet": True,
                 "no_warnings": True,
             }
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
-            return output_path.exists() and output_path.stat().st_size > 0
+
+            candidate = temp_output
+            if not candidate.exists() and temp_output.with_suffix(".mp4").exists():
+                candidate = temp_output.with_suffix(".mp4")
+
+            if candidate.exists() and candidate.stat().st_size > 0:
+                if candidate != output_path:
+                    candidate.replace(output_path)
+                return True
+            return False
 
         return await loop.run_in_executor(None, _do_ytdlp)
     except Exception as e:
@@ -124,6 +144,12 @@ async def download_media_item(
     Returns:
         asset_id if successful, None if skipped/failed
     """
+    # Reuse cached asset if already downloaded and verified
+    cached = job.assets.get(asset_id)
+    if cached and cached.file_path and cached.file_path.exists() and cached.file_path.stat().st_size > 0:
+        logger.info("Reusing existing downloaded media asset for job %s: %s", job.id, asset_id)
+        return asset_id
+
     url = item.url
 
     # SSRF protection
@@ -146,6 +172,16 @@ async def download_media_item(
 
     assert job.temp_dir is not None
     max_bytes = settings.max_download_size_bytes
+
+    # If stream is an HLS playlist, route directly to yt-dlp
+    is_hls = ".m3u8" in url.lower() or (item.mime_type and "mpegurl" in item.mime_type.lower())
+    if item.type in ("video", "gif") and is_hls:
+        filename = f"{filename_base}.mp4"
+        file_path = job.temp_dir / filename
+        if await download_video_stream(url, file_path):
+            job.add_asset(asset_id, filename, "video/mp4", file_path)
+            return asset_id
+        return None
 
     try:
         async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
@@ -175,25 +211,49 @@ async def download_media_item(
 
                 filename = f"{filename_base}.{ext}"
                 file_path = job.temp_dir / filename
+                temp_file = job.temp_dir / f"{filename}.tmp"
+
+                content_length_header = response.headers.get("content-length")
+                expected_bytes = (
+                    int(content_length_header)
+                    if content_length_header and content_length_header.isdigit()
+                    else None
+                )
 
                 downloaded = 0
-                chunks: list[bytes] = []
-                async for chunk in response.aiter_bytes(chunk_size=65536):
-                    downloaded += len(chunk)
-                    if downloaded > max_bytes:
-                        logger.warning(
-                            "Media file too large (>%dMB), aborting: %s",
-                            settings.max_download_size_mb,
-                            url,
-                        )
-                        return None
-                    chunks.append(chunk)
+                with open(temp_file, "wb") as f:
+                    async for chunk in response.aiter_bytes(chunk_size=1048576):
+                        downloaded += len(chunk)
+                        if downloaded > max_bytes:
+                            logger.warning(
+                                "Media file too large (>%dMB), aborting: %s",
+                                settings.max_download_size_mb,
+                                url,
+                            )
+                            f.close()
+                            if temp_file.exists():
+                                temp_file.unlink()
+                            return None
+                        f.write(chunk)
 
-                file_path.write_bytes(b"".join(chunks))
-
-        if not file_path.exists() or file_path.stat().st_size == 0:
-            logger.warning("Downloaded file is empty or missing: %s", file_path)
+        if not temp_file.exists() or temp_file.stat().st_size == 0:
+            logger.warning("Downloaded temp file is empty or missing: %s", temp_file)
+            if temp_file.exists():
+                temp_file.unlink()
             return None
+
+        # Verify completeness against Content-Length if provided
+        if expected_bytes is not None and downloaded != expected_bytes:
+            logger.warning(
+                "Download incomplete for %s: got %d bytes, expected %d",
+                url, downloaded, expected_bytes,
+            )
+            if temp_file.exists():
+                temp_file.unlink()
+            return None
+
+        # Atomic rename to final file path
+        temp_file.replace(file_path)
 
         content_type_final = content_type.split(";")[0].strip() or "application/octet-stream"
         job.add_asset(asset_id, filename, content_type_final, file_path)

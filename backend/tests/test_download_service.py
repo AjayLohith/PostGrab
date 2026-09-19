@@ -127,3 +127,61 @@ async def test_extract_thumbnail_ffmpeg(tmp_path):
     assert poster_path.exists()
     assert poster_path.stat().st_size > 0
 
+
+@pytest.mark.asyncio
+async def test_download_media_item_cached_reuse(manager, tmp_path):
+    """Already downloaded media asset should be reused without re-downloading."""
+    from app.core.config import settings
+    from app.services.download_service import download_media_item
+
+    settings.temp_dir = str(tmp_path)
+    job = await manager.create_job()
+    file_path = job.temp_dir / "test_video.mp4"
+    file_path.write_bytes(b"EXISTING_VIDEO_DATA")
+    job.add_asset("media_video_0", "test_video.mp4", "video/mp4", file_path)
+
+    item = MediaItem(type="video", url="https://video.twimg.com/test.mp4")
+    result_id = await download_media_item(job, item, "media_video_0", "test_video")
+
+    assert result_id == "media_video_0"
+    assert file_path.read_bytes() == b"EXISTING_VIDEO_DATA"
+
+
+@pytest.mark.asyncio
+async def test_download_media_item_completeness_check(manager, tmp_path):
+    """Download should be rejected if Content-Length mismatches actual downloaded bytes."""
+    from unittest.mock import AsyncMock, patch, MagicMock
+    from app.core.config import settings
+    from app.services.download_service import download_media_item
+
+    settings.temp_dir = str(tmp_path)
+    job = await manager.create_job()
+    item = MediaItem(type="image", url="https://pbs.twimg.com/media/test.jpg")
+
+    class MockStreamResponse:
+        status_code = 200
+        headers = {"content-type": "image/jpeg", "content-length": "1000"}
+
+        async def aiter_bytes(self, chunk_size=65536):
+            # Only yield 500 bytes instead of expected 1000
+            yield b"x" * 500
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+    mock_client = MagicMock()
+    mock_client.stream.return_value = MockStreamResponse()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", return_value=mock_client):
+        result_id = await download_media_item(job, item, "media_image_0", "test_image")
+        assert result_id is None
+        # Verify temporary file is not left around
+        assert not (job.temp_dir / "test_image.jpg").exists()
+        assert not (job.temp_dir / "test_image.jpg.tmp").exists()
+
+

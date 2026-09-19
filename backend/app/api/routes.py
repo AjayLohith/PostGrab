@@ -251,6 +251,23 @@ async def download_asset(job_id: str, asset_id: str, request: Request):
     if not asset.file_path or not asset.file_path.exists():
         raise HTTPException(status_code=404, detail="Asset file is missing. Please re-render or re-extract.")
 
+    file_size = asset.file_path.stat().st_size
+    if file_size == 0:
+        raise HTTPException(status_code=404, detail="Asset file is empty or corrupted.")
+
+    # Complete image delivery: return full bytes to avoid chunked progressive rendering
+    if asset.content_type and asset.content_type.startswith("image/"):
+        content = asset.file_path.read_bytes()
+        return Response(
+            content=content,
+            media_type=asset.content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{asset.filename}"',
+                "Content-Length": str(len(content)),
+                "Cache-Control": "no-store",
+            },
+        )
+
     return FileResponse(
         path=str(asset.file_path),
         media_type=asset.content_type or "application/octet-stream",
@@ -296,7 +313,18 @@ async def download_media(body: DownloadMediaRequest, request: Request):
 
     # Return cached asset if already downloaded
     cached = job.assets.get(asset_id)
-    if cached and cached.file_path and cached.file_path.exists():
+    if cached and cached.file_path and cached.file_path.exists() and cached.file_path.stat().st_size > 0:
+        if cached.content_type and cached.content_type.startswith("image/"):
+            content = cached.file_path.read_bytes()
+            return Response(
+                content=content,
+                media_type=cached.content_type,
+                headers={
+                    "Content-Disposition": f'attachment; filename="{cached.filename}"',
+                    "Content-Length": str(len(content)),
+                    "Cache-Control": "no-store",
+                },
+            )
         return FileResponse(
             path=str(cached.file_path),
             media_type=cached.content_type or "application/octet-stream",
@@ -316,6 +344,18 @@ async def download_media(body: DownloadMediaRequest, request: Request):
         )
 
     asset = job.assets[downloaded_id]
+    if asset.content_type and asset.content_type.startswith("image/"):
+        content = asset.file_path.read_bytes()
+        return Response(
+            content=content,
+            media_type=asset.content_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{asset.filename}"',
+                "Content-Length": str(len(content)),
+                "Cache-Control": "no-store",
+            },
+        )
+
     return FileResponse(
         path=str(asset.file_path),
         media_type=asset.content_type or "application/octet-stream",
