@@ -64,7 +64,9 @@ _ENTITY_RE = re.compile(r"(^|[^a-zA-Z0-9_])([@#][a-zA-Z0-9_]{1,30})")
 
 
 def _format_tweet_text(text: str) -> str:
-    cleaned = _clean_text(text)
+    if not text:
+        return ""
+    cleaned = _clean_text(html.unescape(text))
     if not cleaned:
         return ""
     safe = html.escape(cleaned, quote=False)
@@ -326,8 +328,8 @@ def _build_context(
     # Avatar initial for placeholder when no avatar exists
     avatar_initial = (post.author_name or post.author_handle or "?")[0].upper()
 
-    # Radius for media (slightly less than card radius)
-    media_radius = max(0, request.radius - 4)
+    # Radius for media (matches card radius design)
+    media_radius = request.radius
 
     # Quoted post context
     quoted = None

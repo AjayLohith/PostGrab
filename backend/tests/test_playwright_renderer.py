@@ -7,11 +7,14 @@ in Fixture B; all others use no avatar (placeholder fallback).
 """
 
 import io
+import base64
 import pytest
 from PIL import Image
+import numpy as np
 
+from app.models.post import PostData, MediaItem
 from app.models.requests import RenderRequest
-from app.renderers.playwright_renderer import render_to_png, _clean_text
+from app.renderers.playwright_renderer import render_to_png, _clean_text, _format_tweet_text
 from tests.fixtures import (
     ALL_FIXTURES,
     FIXTURE_A, FIXTURE_B, FIXTURE_C, FIXTURE_D, FIXTURE_E,
@@ -213,3 +216,127 @@ class TestPadding:
     def test_padding_renders(self, padding):
         png = render_to_png(FIXTURE_A, default_req(padding=padding))
         assert is_valid_png(png)
+
+
+# ── Text HTML Entity Decoding & Media Rendering Hotfix Tests ─────────────────
+
+class TestTextHtmlEscaping:
+    """Regression tests for HTML entity unescaping / escaping in tweet text."""
+
+    @pytest.mark.parametrize(
+        "source,expected_in_safe_html,forbidden_in_safe_html",
+        [
+            ("Range matters &gt;&gt;&gt; 🔥 😏", "Range matters &gt;&gt;&gt;", "&amp;gt;"),
+            ("Range matters >>>", "Range matters &gt;&gt;&gt;", "&amp;gt;"),
+            ("A > B", "A &gt; B", "&amp;gt;"),
+            ("A < B", "A &lt; B", "&amp;lt;"),
+            ("A & B", "A &amp; B", "&amp;amp;"),
+            ("<3", "&lt;3", "&amp;lt;"),
+            ("Emoji test 🔥", "Emoji test 🔥", None),
+        ],
+    )
+    def test_text_escaping_layer(self, source, expected_in_safe_html, forbidden_in_safe_html):
+        formatted = _format_tweet_text(source)
+        assert expected_in_safe_html in formatted
+        if forbidden_in_safe_html:
+            assert forbidden_in_safe_html not in formatted
+
+    def test_range_matters_render_end_to_end(self):
+        """Verify the exact failing tweet text renders to a valid PNG without HTML entity leaks."""
+        post = PostData(
+            id="test_range_matters",
+            url="https://x.com/chitraaa_1/status/12345",
+            text="Range matters &gt;&gt;&gt; 🔥 😏",
+            author_name="చిత్ర 🪷",
+            author_handle="chitraaa_1",
+        )
+        png = render_to_png(post, default_req(aspect_ratio="original"))
+        assert is_valid_png(png)
+
+
+class TestMediaAndPlayButtonRendering:
+    """Regression tests for video thumbnail presentation and play overlay button."""
+
+    def _create_test_thumbnail(self, width: int = 736, height: int = 631) -> str:
+        img = Image.new("RGB", (width, height), color=(120, 40, 30))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+    def test_video_play_overlay_renders_and_centers(self):
+        """Verify video media renders with centered play button overlay."""
+        thumb_uri = self._create_test_thumbnail(736, 631)
+        post = PostData(
+            id="video_test",
+            url="https://x.com/chitraaa_1/status/12345",
+            text="Range matters >>> 🔥 😏",
+            author_name="చిత్ర 🪷",
+            author_handle="chitraaa_1",
+            media=[MediaItem(type="video", url="https://example.com/v.mp4", thumbnail_url="")],
+        )
+        png = render_to_png(post, default_req(aspect_ratio="original"), resolved_assets={"video_thumbnail": thumb_uri})
+        assert is_valid_png(png)
+
+        arr = np.array(Image.open(io.BytesIO(png)).convert("RGB"))
+        # Blue circle of play button (Twitter blue #1d9bf0)
+        # Scan lower half of the image where media resides
+        h, w = arr.shape[:2]
+        media_region = arr[h // 4:, :, :]
+        blue_mask = (media_region[:, :, 2] > 180) & (media_region[:, :, 0] < 60) & (media_region[:, :, 1] > 100)
+        y_coords, x_coords = np.where(blue_mask)
+
+        assert len(x_coords) > 0, "Play button blue circle should be present in rendered image"
+        btn_w = x_coords.max() - x_coords.min() + 1
+        btn_h = y_coords.max() - y_coords.min() + 1
+
+        # Check button is roughly circular (aspect ratio ~1.0)
+        assert abs(btn_w - btn_h) <= 4, f"Play button should be circular, got {btn_w}x{btn_h}"
+
+        # Check button is substantial (> 100px at 2x retina scale)
+        assert btn_w >= 100, f"Play button diameter should be >= 100px on 2x retina canvas, got {btn_w}"
+
+        # Check horizontal centering relative to canvas
+        center_x = (x_coords.min() + x_coords.max()) / 2
+        canvas_center_x = w / 2
+        assert abs(center_x - canvas_center_x) < 5, f"Play button center ({center_x}) should align with canvas center ({canvas_center_x})"
+
+    def test_static_image_has_no_play_button(self):
+        """Verify static images do NOT render a video play button."""
+        img_uri = self._create_test_thumbnail(600, 400)
+        post = PostData(
+            id="image_test",
+            url="https://x.com/user/status/12345",
+            text="Static image tweet",
+            author_name="User",
+            author_handle="user",
+            media=[MediaItem(type="image", url=img_uri)],
+        )
+        png = render_to_png(
+            post,
+            default_req(aspect_ratio="original", background="solid", background_color="#ffffff"),
+            resolved_assets={"images": [img_uri]},
+        )
+        assert is_valid_png(png)
+
+        arr = np.array(Image.open(io.BytesIO(png)).convert("RGB"))
+        h = arr.shape[0]
+        # In a static image, the media area (lower half) must not contain a blue play button
+        media_region = arr[h // 2:, :, :]
+        blue_pixels = ((media_region[:, :, 2] > 180) & (media_region[:, :, 0] < 60) & (media_region[:, :, 1] > 100)).sum()
+        assert blue_pixels == 0, f"Static image media should not contain play button pixels, found {blue_pixels}"
+
+    @pytest.mark.parametrize("aspect_ratio", ["original", "1:1", "16:9"])
+    def test_different_aspect_ratios_with_video(self, aspect_ratio):
+        """Verify different aspect ratio settings with video thumbnail render cleanly."""
+        thumb_uri = self._create_test_thumbnail(1280, 720)
+        post = PostData(
+            id="ratio_test",
+            url="https://x.com/user/status/12345",
+            text="Testing video with aspect ratio " + aspect_ratio,
+            author_name="User",
+            author_handle="user",
+            media=[MediaItem(type="video", url="https://example.com/v.mp4", thumbnail_url="")],
+        )
+        png = render_to_png(post, default_req(aspect_ratio=aspect_ratio), resolved_assets={"video_thumbnail": thumb_uri})
+        assert is_valid_png(png)
+

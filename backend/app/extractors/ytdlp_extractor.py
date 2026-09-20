@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
 import math
 import re
@@ -179,7 +180,7 @@ def _extract_quoted_post(
     if syn_data and syn_data.get("quoted_tweet"):
         q = syn_data["quoted_tweet"]
         q_user = q.get("user") or {}
-        q_name = q_user.get("name") or q_user.get("screen_name") or "User"
+        q_name = html.unescape(q_user.get("name") or q_user.get("screen_name") or "User")
         q_handle = q_user.get("screen_name") or ""
         q_avatar = q_user.get("profile_image_url_https", "")
         if q_avatar:
@@ -187,7 +188,7 @@ def _extract_quoted_post(
         if not q_avatar and q_handle:
             q_avatar = f"https://unavatar.io/x/{q_handle}"
 
-        q_text = q.get("text", "")
+        q_text = html.unescape(q.get("text", "")) if q.get("text") else ""
         q_media = _extract_media_from_syndication(q)
 
         q_created_at: datetime | None = None
@@ -328,7 +329,7 @@ class YtDlpExtractor:
     ) -> PostData:
         """Build a complete PostData model directly from Twitter syndication data."""
         user = syn_data.get("user") or {}
-        author_name = user.get("name") or user.get("screen_name") or "User"
+        author_name = html.unescape(user.get("name") or user.get("screen_name") or "User")
         author_handle = user.get("screen_name") or ""
         avatar_url = user.get("profile_image_url_https", "")
         if avatar_url:
@@ -336,7 +337,7 @@ class YtDlpExtractor:
         if not avatar_url and author_handle:
             avatar_url = f"https://unavatar.io/x/{author_handle}"
 
-        text = syn_data.get("text", "")
+        text = html.unescape(syn_data.get("text", "")) if syn_data.get("text") else ""
         media = _extract_media_from_syndication(syn_data)
 
         created_at: datetime | None = None
@@ -417,7 +418,7 @@ class YtDlpExtractor:
         if syn_data:
             syn_text = syn_data.get("text")
             if syn_text:
-                text = syn_text
+                text = html.unescape(syn_text)
 
             user = syn_data.get("user") or {}
             syn_avatar = user.get("profile_image_url_https")
@@ -425,7 +426,7 @@ class YtDlpExtractor:
                 avatar_url = syn_avatar.replace("_normal.", "_400x400.")
 
             if not uploader and user.get("name"):
-                uploader = user["name"]
+                uploader = html.unescape(user["name"])
             if not uploader_id and user.get("screen_name"):
                 uploader_id = user["screen_name"]
 
