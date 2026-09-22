@@ -342,6 +342,7 @@ def _build_context(
         quoted = {
             "author_name": qp.author_name or qp.author_handle,
             "author_handle": qp.author_handle,
+            "author_verified": getattr(qp, "is_verified", False) or getattr(qp, "author_verified", False),
             "avatar_url": resolved_assets.get("quoted_avatar") or qp.avatar_url or "",
             "avatar_initial": (qp.author_name or qp.author_handle or "?")[0].upper(),
             "text": _format_tweet_text(qp.text or ""),
@@ -376,6 +377,7 @@ def _build_context(
         "url":              post.url,
         "author_name":      post.author_name or post.author_handle,
         "author_handle":    post.author_handle,
+        "author_verified":  getattr(post, "is_verified", False),
         "avatar_url":       avatar_url,
         "avatar_initial":   avatar_initial,
         "date_str":         _fmt_date(post.created_at),

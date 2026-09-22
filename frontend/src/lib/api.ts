@@ -89,6 +89,27 @@ export const api = {
     return res.blob()
   },
 
+  /** Prepare media download on backend and return download URL for direct browser streaming */
+  async prepareMediaDownload(
+    jobId: string,
+    mediaIndex: number,
+  ): Promise<{ status: string; asset_id: string; filename: string; download_url: string }> {
+    const res = await fetch(`${API_BASE}/download/prepare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: jobId, media_index: mediaIndex }),
+    })
+    if (!res.ok) {
+      await handleResponse(res)
+    }
+    return res.json() as Promise<{ status: string; asset_id: string; filename: string; download_url: string }>
+  },
+
+  /** Direct streaming download URL for media */
+  getMediaDownloadUrl(jobId: string, mediaIndex: number): string {
+    return `${API_BASE}/download/${jobId}/media/${mediaIndex}`
+  },
+
   /** Download all as ZIP — returns a Blob */
   async downloadAll(jobId: string, includeTweetCard = true): Promise<Blob> {
     const res = await fetch(`${API_BASE}/download-all`, {

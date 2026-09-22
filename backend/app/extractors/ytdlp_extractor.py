@@ -22,6 +22,25 @@ from app.core.security import extract_post_info
 logger = logging.getLogger(__name__)
 
 
+def _is_user_verified(user: dict[str, Any] | None, info: dict[str, Any] | None = None) -> bool:
+    """Detect whether a profile has verified / blue check status from syndication or yt-dlp data."""
+    if user:
+        if user.get("is_blue_verified") is True:
+            return True
+        if user.get("verified") is True:
+            return True
+        if user.get("verified_type") is not None:
+            return True
+    if info:
+        if info.get("uploader_verified") is True:
+            return True
+        if info.get("channel_is_verified") is True:
+            return True
+        if info.get("verified") is True:
+            return True
+    return False
+
+
 def _generate_syndication_token(post_id: str) -> str:
     """Generate the required base-36 syndication token for Twitter's tweet-result endpoint."""
     try:
@@ -190,6 +209,7 @@ def _extract_quoted_post(
 
         q_text = html.unescape(q.get("text", "")) if q.get("text") else ""
         q_media = _extract_media_from_syndication(q)
+        q_verified = _is_user_verified(q_user)
 
         q_created_at: datetime | None = None
         if q.get("created_at"):
@@ -203,6 +223,7 @@ def _extract_quoted_post(
             url=f"https://x.com/{q_handle}/status/{q.get('id_str')}" if q_handle and q.get("id_str") else None,
             author_name=q_name,
             author_handle=q_handle,
+            author_verified=q_verified,
             avatar_url=q_avatar,
             text=q_text,
             created_at=q_created_at,
@@ -226,11 +247,14 @@ def _extract_quoted_post(
             q_avatar = f"https://unavatar.io/x/{q_handle}"
 
         q_text = qs.get("description") or qs.get("title") or ""
+        qs_user = qs.get("user") or {}
+        q_verified = _is_user_verified(qs_user, qs)
         return QuotedPostData(
             id=str(qs.get("id", "quoted")),
             url=qs.get("webpage_url") or (f"https://x.com/{q_handle}/status/{qs.get('id')}" if q_handle and qs.get("id") else None),
             author_name=q_name or q_handle or "User",
             author_handle=q_handle,
+            author_verified=q_verified,
             avatar_url=q_avatar,
             text=q_text,
             media=[],
@@ -351,12 +375,14 @@ class YtDlpExtractor:
         reply_count = syn_data.get("conversation_count")
         like_count = syn_data.get("favorite_count")
         quoted_post = _extract_quoted_post(syn_data)
+        is_verified = _is_user_verified(user)
 
         return PostData(
             id=post_id or syn_data.get("id_str", "unknown"),
             url=url,
             author_name=author_name,
             author_handle=author_handle,
+            is_verified=is_verified,
             avatar_url=avatar_url,
             text=text,
             created_at=created_at,
@@ -532,11 +558,19 @@ class YtDlpExtractor:
                     if quoted_vids:
                         quoted_post.media = [m for m in quoted_vids if m.type in ("video", "gif")] + quoted_post.media
 
+        is_verified = False
+        if syn_data:
+            syn_user = syn_data.get("user") or {}
+            is_verified = _is_user_verified(syn_user)
+        if not is_verified and info:
+            is_verified = _is_user_verified(None, info)
+
         return PostData(
             id=post_id,
             url=url,
             author_name=uploader,
             author_handle=uploader_id,
+            is_verified=is_verified,
             avatar_url=avatar_url,
             text=text,
             created_at=created_at,

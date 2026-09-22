@@ -1,4 +1,5 @@
-import { Download, Play, Image as ImageIcon, Video } from 'lucide-react'
+import { useState } from 'react'
+import { Download, Play, Image as ImageIcon, Video, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { triggerDownload } from '@/lib/utils'
 import { api } from '@/lib/api'
@@ -167,6 +168,32 @@ function VideoItem({
   jobId: string
   label: string
 }) {
+  const [isDownloading, setIsDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  const handleDownload = async () => {
+    if (isDownloading) return
+    setIsDownloading(true)
+    setDownloadError(null)
+
+    try {
+      const data = await api.prepareMediaDownload(jobId, globalIndex)
+      // Trigger native browser download directly from server file stream
+      // Zero JS heap memory allocated for large video
+      const link = document.createElement('a')
+      link.href = data.download_url
+      link.download = data.filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Download failed'
+      setDownloadError(message)
+    } finally {
+      setIsDownloading(false)
+    }
+  }
+
   return (
     <div className="space-y-3">
       {/* Thumbnail */}
@@ -210,24 +237,32 @@ function VideoItem({
         size="sm"
         variant="outline"
         className="gap-1.5 w-full border-zinc-800 hover:bg-zinc-800 hover:text-white text-xs sm:text-sm"
-        onClick={() => {
-          void api.downloadMedia(jobId, globalIndex).then((blob) => {
-            triggerDownload(blob, `${label.toLowerCase().replace(' ', '_')}.mp4`)
-          })
-        }}
+        onClick={handleDownload}
+        disabled={isDownloading}
         aria-label={`Download ${label}`}
       >
-        <Download size={13} aria-hidden />
-        Download {label}
-        {item.width && item.height && (
+        {isDownloading ? (
+          <Loader2 size={13} className="animate-spin text-primary" aria-hidden />
+        ) : (
+          <Download size={13} aria-hidden />
+        )}
+        {isDownloading ? `Downloading ${label}...` : `Download ${label}`}
+        {item.width && item.height && !isDownloading && (
           <span className="ml-1 text-[10px] sm:text-xs text-zinc-500">
             {item.width}×{item.height}
           </span>
         )}
       </Button>
+
+      {downloadError && (
+        <p className="text-xs text-red-400 font-medium text-center" role="alert">
+          {downloadError}
+        </p>
+      )}
     </div>
   )
 }
+
 
 function ImageItem({ item, index }: { item: MediaItem; index: number }) {
   return (

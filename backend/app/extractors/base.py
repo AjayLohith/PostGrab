@@ -116,3 +116,10 @@ class ZipCreationFailed(ExtractionError):
     def __init__(self, message: str = "Failed to create download ZIP archive."):
         super().__init__(message, code="ZIP_CREATION_FAILED", recoverable=False)
 
+
+class MediaTooLargeError(ExtractionError):
+    """Media exceeds maximum size limit."""
+
+    def __init__(self, message: str = "Video exceeds the 150 MB download limit."):
+        super().__init__(message, code="MEDIA_TOO_LARGE", recoverable=False)
+

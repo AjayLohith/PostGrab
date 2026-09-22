@@ -18,6 +18,7 @@ from app.extractors.base import (
     ImageRenderFailed,
     MediaExtractionError,
     MediaExtractionFailed,
+    MediaTooLargeError,
     PostExtractionFailed,
     PostNotFoundError,
     PostPrivateError,
@@ -246,7 +247,27 @@ async def download_asset(job_id: str, asset_id: str, request: Request):
 
     asset = job.assets.get(asset_id)
     if asset is None:
-        raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found in this job.")
+        if asset_id.startswith(MEDIA_ASSET_PREFIX) and job.post_data:
+            # On-demand media resolution if not yet downloaded
+            try:
+                parts = asset_id.split("_")
+                media_idx = int(parts[-1])
+                post = PostData(**job.post_data)
+                all_media = post.all_media_items
+                if 0 <= media_idx < len(all_media):
+                    item = all_media[media_idx]
+                    handle = _sanitize(post.author_handle or "unknown")
+                    post_id = _sanitize(post.id or "post")
+                    filename_base = f"{_sanitize(handle)}_{_sanitize(post_id)}_{item.type}_{media_idx + 1:02d}"
+                    downloaded_id = await download_media_item(job, item, asset_id, filename_base)
+                    if downloaded_id and downloaded_id in job.assets:
+                        asset = job.assets[downloaded_id]
+            except MediaTooLargeError as e:
+                raise HTTPException(status_code=413, detail=str(e.message))
+            except Exception:
+                pass
+        if asset is None:
+            raise HTTPException(status_code=404, detail=f"Asset '{asset_id}' not found in this job.")
 
     if not asset.file_path or not asset.file_path.exists():
         raise HTTPException(status_code=404, detail="Asset file is missing. Please re-render or re-extract.")
@@ -280,6 +301,78 @@ async def download_asset(job_id: str, asset_id: str, request: Request):
 
 
 # ── Download media ────────────────────────────────────────────────────────────
+
+@router.post("/download/prepare")
+async def prepare_media_download(body: DownloadMediaRequest, request: Request):
+    """
+    Prepare/download a specific media item on the server side and return
+    direct download URL for native browser transfer (avoiding in-memory blob buffering).
+    """
+    client_ip = _get_client_ip(request)
+    if not await rate_limiter.is_allowed(client_ip):
+        return _rate_limit_error()
+
+    job = await job_manager.get_job(body.job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found or expired.")
+
+    if job.post_data is None:
+        raise HTTPException(status_code=400, detail="Job has not completed extraction yet.")
+
+    post = PostData(**job.post_data)
+    all_media = post.all_media_items
+
+    if body.media_index >= len(all_media):
+        raise HTTPException(status_code=404, detail=f"Media index {body.media_index} out of range.")
+
+    item = all_media[body.media_index]
+    handle = _sanitize(post.author_handle or "unknown")
+    post_id = _sanitize(post.id or "post")
+
+    media_type_label = item.type
+    asset_id = f"{MEDIA_ASSET_PREFIX}{media_type_label}_{body.media_index}"
+
+    cached = job.assets.get(asset_id)
+    if cached and cached.file_path and cached.file_path.exists() and cached.file_path.stat().st_size > 0:
+        return {
+            "status": "ready",
+            "asset_id": asset_id,
+            "filename": cached.filename,
+            "download_url": f"/api/download/{job.id}/{asset_id}",
+        }
+
+    from app.core.security import sanitize_filename
+    filename_base = f"{sanitize_filename(handle)}_{sanitize_filename(post_id)}_{media_type_label}_{body.media_index + 1:02d}"
+
+    try:
+        downloaded_id = await download_media_item(job, item, asset_id, filename_base)
+    except MediaTooLargeError as e:
+        raise HTTPException(status_code=413, detail=str(e.message))
+
+    if downloaded_id is None:
+        raise HTTPException(
+            status_code=502,
+            detail="Could not download this media file. It may be unavailable or too large.",
+        )
+
+    asset = job.assets[downloaded_id]
+    return {
+        "status": "ready",
+        "asset_id": downloaded_id,
+        "filename": asset.filename,
+        "download_url": f"/api/download/{job.id}/{downloaded_id}",
+    }
+
+
+@router.get("/download/{job_id}/media/{media_index}")
+async def download_media_get(job_id: str, media_index: int, request: Request):
+    """
+    Direct GET download for a specific media item.
+    Enables native streaming browser download with zero in-memory JS Blob allocation.
+    """
+    body = DownloadMediaRequest(job_id=job_id, media_index=media_index)
+    return await download_media(body, request)
+
 
 @router.post("/download")
 async def download_media(body: DownloadMediaRequest, request: Request):
@@ -335,7 +428,10 @@ async def download_media(body: DownloadMediaRequest, request: Request):
     # Download now
     from app.core.security import sanitize_filename
     filename_base = f"{sanitize_filename(handle)}_{sanitize_filename(post_id)}_{media_type_label}_{body.media_index + 1:02d}"
-    downloaded_id = await download_media_item(job, item, asset_id, filename_base)
+    try:
+        downloaded_id = await download_media_item(job, item, asset_id, filename_base)
+    except MediaTooLargeError as e:
+        raise HTTPException(status_code=413, detail=str(e.message))
 
     if downloaded_id is None:
         raise HTTPException(
@@ -362,6 +458,7 @@ async def download_media(body: DownloadMediaRequest, request: Request):
         filename=asset.filename,
         headers={"Content-Disposition": f'attachment; filename="{asset.filename}"'},
     )
+
 
 
 def _sanitize(s: str) -> str:

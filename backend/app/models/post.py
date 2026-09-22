@@ -41,10 +41,15 @@ class QuotedPostData(BaseModel):
     url: str | None = None
     author_name: str
     author_handle: str
+    author_verified: bool = False
     avatar_url: str | None = None
     text: str = ""
     created_at: datetime | None = None
     media: list[MediaItem] = Field(default_factory=list)
+
+    @property
+    def is_verified(self) -> bool:
+        return self.author_verified
 
 
 class PostData(BaseModel):
@@ -54,6 +59,7 @@ class PostData(BaseModel):
     url: str
     author_name: str
     author_handle: str
+    is_verified: bool = False
     avatar_url: str | None = None
     text: str = ""
     created_at: datetime | None = None

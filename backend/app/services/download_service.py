@@ -13,9 +13,10 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.core.config import settings
+from app.core.config import settings, MAX_VIDEO_SIZE_BYTES
 from app.core.job_manager import Job, JobStatus, job_manager
 from app.core.security import is_allowed_media_host, sanitize_filename
+from app.extractors.base import MediaTooLargeError
 from app.models.post import MediaItem, PostData
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,7 @@ async def download_video_stream(url: str, output_path: Path) -> bool:
                 "postprocessor_args": {
                     "merger": ["-c", "copy"],
                 },
+                "max_filesize": settings.max_download_size_bytes,
                 "concurrent_fragment_downloads": 8,
                 "retries": 3,
                 "fragment_retries": 3,
@@ -143,6 +145,8 @@ async def download_media_item(
 
     Returns:
         asset_id if successful, None if skipped/failed
+    Raises:
+        MediaTooLargeError: If media exceeds the 150 MB download limit.
     """
     # Reuse cached asset if already downloaded and verified
     cached = job.assets.get(asset_id)
@@ -156,6 +160,11 @@ async def download_media_item(
     if not is_allowed_media_host(url):
         logger.warning("Blocked media download from disallowed host: %s", url)
         return None
+
+    max_bytes = settings.max_download_size_bytes
+    if item.file_size and item.file_size > max_bytes:
+        logger.warning("Media item file_size (%d) exceeds max allowed (%d bytes)", item.file_size, max_bytes)
+        raise MediaTooLargeError("Video exceeds the 150 MB download limit.")
 
     # Best-quality variant selection for video (prefer direct MP4s over HLS m3u8 manifests)
     if item.type in ("video", "gif") and item.variants:
@@ -171,7 +180,6 @@ async def download_media_item(
         url = best.url
 
     assert job.temp_dir is not None
-    max_bytes = settings.max_download_size_bytes
 
     # If stream is an HLS playlist, route directly to yt-dlp
     is_hls = ".m3u8" in url.lower() or (item.mime_type and "mpegurl" in item.mime_type.lower())
@@ -179,12 +187,17 @@ async def download_media_item(
         filename = f"{filename_base}.mp4"
         file_path = job.temp_dir / filename
         if await download_video_stream(url, file_path):
+            if file_path.exists() and file_path.stat().st_size > max_bytes:
+                file_path.unlink()
+                raise MediaTooLargeError("Video exceeds the 150 MB download limit.")
             job.add_asset(asset_id, filename, "video/mp4", file_path)
             return asset_id
         return None
 
+    # Allow adequate time for large file transfer up to 150 MB without artificial timeout aborts
+    client_timeout = httpx.Timeout(connect=15.0, read=300.0, write=60.0, pool=30.0)
     try:
-        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=client_timeout, follow_redirects=True) as client:
             async with client.stream("GET", url) as response:
                 if response.status_code != 200:
                     logger.warning(
@@ -195,6 +208,9 @@ async def download_media_item(
                         filename = f"{filename_base}.mp4"
                         file_path = job.temp_dir / filename
                         if await download_video_stream(url, file_path):
+                            if file_path.exists() and file_path.stat().st_size > max_bytes:
+                                file_path.unlink()
+                                raise MediaTooLargeError("Video exceeds the 150 MB download limit.")
                             job.add_asset(asset_id, filename, "video/mp4", file_path)
                             return asset_id
                     return None
@@ -220,20 +236,27 @@ async def download_media_item(
                     else None
                 )
 
+                if expected_bytes is not None and expected_bytes > max_bytes:
+                    logger.warning(
+                        "Content-Length %d exceeds max video limit (%d bytes): %s",
+                        expected_bytes, max_bytes, url,
+                    )
+                    raise MediaTooLargeError("Video exceeds the 150 MB download limit.")
+
                 downloaded = 0
                 with open(temp_file, "wb") as f:
                     async for chunk in response.aiter_bytes(chunk_size=1048576):
                         downloaded += len(chunk)
                         if downloaded > max_bytes:
                             logger.warning(
-                                "Media file too large (>%dMB), aborting: %s",
+                                "Media file exceeded max limit (>%dMB), aborting: %s",
                                 settings.max_download_size_mb,
                                 url,
                             )
                             f.close()
                             if temp_file.exists():
                                 temp_file.unlink()
-                            return None
+                            raise MediaTooLargeError("Video exceeds the 150 MB download limit.")
                         f.write(chunk)
 
         if not temp_file.exists() or temp_file.stat().st_size == 0:
@@ -263,6 +286,8 @@ async def download_media_item(
         )
         return asset_id
 
+    except MediaTooLargeError:
+        raise
     except Exception as e:
         logger.error("Failed to download media for job %s (%s): %s", job.id, url, e)
         # Attempt fallback for video
@@ -270,9 +295,13 @@ async def download_media_item(
             filename = f"{filename_base}.mp4"
             file_path = job.temp_dir / filename
             if await download_video_stream(url, file_path):
+                if file_path.exists() and file_path.stat().st_size > max_bytes:
+                    file_path.unlink()
+                    raise MediaTooLargeError("Video exceeds the 150 MB download limit.")
                 job.add_asset(asset_id, filename, "video/mp4", file_path)
                 return asset_id
         return None
+
 
 
 async def download_all_media(job: Job, post: PostData) -> list[str]:

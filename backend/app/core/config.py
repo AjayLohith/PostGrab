@@ -5,6 +5,10 @@ from pathlib import Path
 from pydantic_settings import BaseSettings
 
 
+MAX_VIDEO_SIZE_MB: int = 150
+MAX_VIDEO_SIZE_BYTES: int = MAX_VIDEO_SIZE_MB * 1024 * 1024
+
+
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
@@ -22,8 +26,8 @@ class Settings(BaseSettings):
     rate_limit_requests: int = 20
     rate_limit_window_seconds: int = 60
 
-    # Download limits
-    max_download_size_mb: int = 500
+    # Download limits (hard limit: 150 MB maximum)
+    max_download_size_mb: int = MAX_VIDEO_SIZE_MB
 
     # CORS
     cors_origins: str = "*"

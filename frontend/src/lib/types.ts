@@ -28,6 +28,7 @@ export interface QuotedPostData {
   url?: string | null
   author_name: string
   author_handle: string
+  is_verified?: boolean
   avatar_url: string | null
   text: string
   created_at: string | null
@@ -39,6 +40,7 @@ export interface PostData {
   url: string
   author_name: string
   author_handle: string
+  is_verified?: boolean
   avatar_url: string | null
   text: string
   created_at: string | null
